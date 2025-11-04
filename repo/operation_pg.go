@@ -54,3 +54,21 @@ func (r *PgOperationRepo) ListByAccount(ctx context.Context, accID domain.Accoun
 	}
 	return out, rows.Err()
 }
+func (r *PgOperationRepo) Get(ctx context.Context, id domain.OperationID) (domain.Operation, error) {
+	var o domain.Operation
+	var amt string
+	err := r.db.QueryRow(ctx,
+		`SELECT id,type,bank_account_id,amount,"date",description,category_id
+		   FROM operations WHERE id=$1`, id).
+		Scan(&o.ID, &o.Type, &o.BankAccount, &amt, &o.Date, &o.Description, &o.Category)
+	if err != nil {
+		return domain.Operation{}, err
+	}
+	dec, err := decimal.NewFromString(amt)
+	if err != nil {
+		return domain.Operation{}, err
+	}
+	o.Amount = dec
+	return o, nil
+}
+func (r *PgOperationRepo) Db() *pgxpool.Pool { return r.db }

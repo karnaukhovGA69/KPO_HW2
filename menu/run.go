@@ -5,10 +5,11 @@ import (
 	"fmt"
 )
 
-// Run — крутит меню до "exit", вызывает обработчики и ждёт Enter.
-func Run(ctx context.Context, m Menu, d Deps) {
+func Run(ctx context.Context, m Menu, d *Deps) {
+	deps := d // локальная копия, будем менять внутри
 	for {
 		Draw(m)
+		// Если у тебя есть ReadChoice — используй его. Иначе оставь ReadIndex/KeyAt:
 		idx, err := ReadIndex(len(m.Items))
 		if err != nil {
 			fmt.Println("Неверный ввод")
@@ -21,7 +22,7 @@ func Run(ctx context.Context, m Menu, d Deps) {
 			fmt.Println("Пока!")
 			return
 		}
-		if err := Execute(ctx, key, d); err != nil {
+		if err := Execute(ctx, key, deps); err != nil {
 			fmt.Println("Ошибка:", err)
 		}
 		WaitEnter()

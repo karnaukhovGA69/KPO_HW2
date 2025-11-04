@@ -5,18 +5,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
 	"main/domain"
 )
 
 type OperationService struct {
-	db *pgxpool.Pool
+	db TxStarter // <--- было *pgxpool.Pool
 	f  domain.Factory
 }
 
-func NewOperationService(db *pgxpool.Pool, f domain.Factory) *OperationService {
+func NewOperationService(db TxStarter, f domain.Factory) *OperationService { // <--- принимали *pgxpool.Pool
 	return &OperationService{db: db, f: f}
 }
 
@@ -87,4 +86,63 @@ func (s *OperationService) ApplyOperation(
 		return domain.Operation{}, err
 	}
 	return op, nil
+}
+func (s *OperationService) RemoveOperation(ctx context.Context, opID domain.OperationID) error {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1) прочитать операцию
+	var t int
+	var accID domain.AccountID
+	var amtStr string
+	err = tx.QueryRow(ctx,
+		`SELECT type, bank_account_id, amount FROM operations WHERE id=$1`, opID).
+		Scan(&t, &accID, &amtStr)
+	if err != nil {
+		return err
+	}
+	amt, err := decimal.NewFromString(amtStr)
+	if err != nil {
+		return err
+	}
+
+	// 2) заблокировать строку счёта и взять баланс
+	var balStr string
+	if err := tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id=$1 FOR UPDATE`, accID).Scan(&balStr); err != nil {
+		return err
+	}
+	curBal, err := decimal.NewFromString(balStr)
+	if err != nil {
+		return err
+	}
+
+	acc := domain.BankAccount{ID: accID, Balance: curBal}
+
+	// 3) применить "обратный" эффект
+	if domain.OperationType(t) == domain.OpIncome {
+		// удаляем доход -> вычесть деньги
+		if err := acc.Debit(amt); err != nil {
+			return err
+		} // запретить минус
+	} else {
+		// удаляем расход -> добавить деньги
+		if err := acc.Credit(amt); err != nil {
+			return err
+		}
+	}
+
+	// 4) удалить операцию
+	if _, err := tx.Exec(ctx, `DELETE FROM operations WHERE id=$1`, opID); err != nil {
+		return err
+	}
+
+	// 5) обновить баланс счёта
+	if _, err := tx.Exec(ctx, `UPDATE accounts SET balance=$2 WHERE id=$1`, accID, acc.Balance.StringFixed(2)); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }

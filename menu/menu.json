@@ -4,7 +4,9 @@
 	{ "key": "summary_30d", "field": "Сводка за 30 дней" },
 	{ "key": "list_ops_30d", "field": "Список операций за 30 дней" },
 	{ "key": "list_accounts", "field": "Список счетов" },
-
+	{ "key": "delete_op_30d", "field": "Удалить операцию (за 30 дней)" },
+	{ "key": "summary_cat_30d", "field": "Сводка по категориям (30 дней)" },
+	{ "key": "summary_cat_period", "field": "Сводка по категориям (период)" },
 	{ "key": "export_ops_csv", "field": "Экспорт операций (CSV)" },
 	{ "key": "import_ops_csv", "field": "Импорт операций (CSV)" },
 	{ "key": "export_ops_json", "field": "Экспорт операций (JSON)" },

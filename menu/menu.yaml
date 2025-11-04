@@ -15,4 +15,5 @@
   { 'key': 'add_category', 'field': 'Создать категорию' },
   { 'key': 'list_categories', 'field': 'Список категорий' },
   { 'key': 'exit', 'field': 'Выход' },
+  { 'key': 'delete_op_30d', 'field': 'Удалить операцию (за 30 дней)' },
 ]

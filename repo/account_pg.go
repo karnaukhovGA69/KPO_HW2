@@ -75,3 +75,7 @@ func (r *PgAccountRepo) List(ctx context.Context) ([]domain.BankAccount, error) 
 	}
 	return out, rows.Err()
 }
+func (r *PgAccountRepo) Delete(ctx context.Context, id domain.AccountID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM accounts WHERE id=$1`, id)
+	return err
+}
