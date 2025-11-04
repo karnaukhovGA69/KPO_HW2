@@ -2,8 +2,6 @@ package menu
 
 import "context"
 
-// BuildCommands — реестр key -> Command.
-// Внутри делегируем на существующий Execute(ctx, key, deps).
 func BuildCommands(d Deps) map[string]Command {
 	mk := func(key, name string) Command {
 		return Command{
