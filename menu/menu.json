@@ -13,8 +13,11 @@
 	{ "key": "import_ops_json", "field": "Импорт операций (JSON)" },
 	{ "key": "export_ops_yaml", "field": "Экспорт операций (YAML)" },
 	{ "key": "import_ops_yaml", "field": "Импорт операций (YAML)" },
-
+	{ "key": "rename_account", "field": "Переименовать активный счёт" },
+	{ "key": "rename_category", "field": "Переименовать категорию" },
+	{ "key": "delete_category", "field": "Удалить категорию" },
 	{ "key": "add_category", "field": "Создать категорию" },
 	{ "key": "list_categories", "field": "Список категорий" },
+	{ "key": "edit_op_30d", "field": "Редактировать операцию (30 дней)" },
 	{ "key": "exit", "field": "Выход" }
 ]

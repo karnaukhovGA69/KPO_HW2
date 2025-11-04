@@ -259,6 +259,59 @@ func Execute(ctx context.Context, key string, d *Deps) error {
 			}
 		}
 		return printSummary(ctx, *d, fmt.Sprintf("Импортировано операций: %d.", len(rows)))
+	case "edit_op_30d":
+		from, to := time.Now().AddDate(0, 0, -30), time.Now()
+		// выберем операцию
+		opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
+		if err != nil {
+			return err
+		}
+
+		// загрузим текущие поля
+		old, err := d.OpsRepo.Get(ctx, opID)
+		if err != nil {
+			return err
+		}
+
+		// спросим новые значения (пусто = оставить)
+		newType := readTypeOptional(old.Type)
+		newAmt, err := readAmountOptional("Сумма", old.Amount)
+		if err != nil {
+			return err
+		}
+		newDate, err := readDateOptional(old.Date)
+		if err != nil {
+			return err
+		}
+
+		// категория: если тип поменялся — обязателен выбор новой; иначе можно Enter оставить
+		var newCat domain.CategoryID
+		if newType != old.Type {
+			newCat, err = chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
+				domain.CategoryType(newType), old.Category, false)
+			if err != nil {
+				return err
+			}
+		} else {
+			newCat, err = chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
+				domain.CategoryType(newType), old.Category, true)
+			if err != nil {
+				return err
+			}
+		}
+
+		// описание — простое (пусто = оставить)
+		desc := readLine(fmt.Sprintf("Описание (пусто = оставить: %q): ", old.Description))
+		if desc == "" {
+			desc = old.Description
+		}
+
+		// применяем через сервис
+		opSvc := service.NewOperationService(d.Pool, d.Factory)
+		if err := opSvc.UpdateOperation(ctx, opID, newType, newAmt, newDate, newCat, desc); err != nil {
+			return err
+		}
+		return printSummary(ctx, *d, "Операция обновлена.")
 	case "delete_op_30d":
 		from, to := time.Now().AddDate(0, 0, -30), time.Now()
 		opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
@@ -353,7 +406,57 @@ func Execute(ctx context.Context, key string, d *Deps) error {
 			}
 		}
 		return printSummary(ctx, *d, fmt.Sprintf("Импортировано операций: %d.", len(rows)))
+	case "rename_account":
+		newName := readLine("Новое имя активного счёта: ")
+		if strings.TrimSpace(newName) == "" {
+			fmt.Println("Имя пустое")
+			return nil
+		}
+		if err := d.AccRepo.UpdateName(ctx, d.AccountID, newName); err != nil {
+			return err
+		}
+		fmt.Println("Счёт переименован.")
+		return nil
 
+	// ПЕРЕИМЕНОВАТЬ КАТЕГОРИЮ
+	case "rename_category":
+		catID, err := chooseAnyCategory(ctx, d.CatRepo)
+		if err != nil {
+			return err
+		}
+		newName := readLine("Новое имя категории: ")
+		if strings.TrimSpace(newName) == "" {
+			fmt.Println("Имя пустое")
+			return nil
+		}
+		if err := d.CatRepo.UpdateName(ctx, catID, newName); err != nil {
+			return err
+		}
+		fmt.Println("Категория переименована.")
+		return nil
+
+	// УДАЛИТЬ КАТЕГОРИЮ (если нет операций)
+	case "delete_category":
+		catID, err := chooseAnyCategory(ctx, d.CatRepo)
+		if err != nil {
+			return err
+		}
+		has, err := d.CatRepo.HasOperations(ctx, catID)
+		if err != nil {
+			return err
+		}
+		if has {
+			fmt.Println("Нельзя удалить: в категории есть операции. Сначала удалите/перенесите операции.")
+			return nil
+		}
+		if !confirm("Точно удалить категорию?") {
+			return nil
+		}
+		if err := d.CatRepo.Delete(ctx, catID); err != nil {
+			return err
+		}
+		fmt.Println("Категория удалена.")
+		return nil
 	case "export_ops_yaml":
 		path := readLine("Путь к файлу (напр. ops.yaml): ")
 		if path == "" {
@@ -590,4 +693,112 @@ func chooseOperation(ctx context.Context, ops *repo.PgOperationRepo, cats *repo.
 		return "", fmt.Errorf("неверный выбор")
 	}
 	return list[n-1].ID, nil
+}
+func chooseAnyCategory(ctx context.Context, cr *repo.PgCategoryRepo) (domain.CategoryID, error) {
+	cats, err := cr.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(cats) == 0 {
+		return "", fmt.Errorf("категорий нет")
+	}
+	fmt.Println("=== Категории ===")
+	for i, c := range cats {
+		tag := "доход"
+		if c.IsExpense() {
+			tag = "расход"
+		}
+		fmt.Printf("%d) %s [%s]\n", i+1, c.Name, tag)
+	}
+	nStr := readLine("Выбор: ")
+	n, _ := strconv.Atoi(nStr)
+	if n < 1 || n > len(cats) {
+		return "", fmt.Errorf("неверный выбор")
+	}
+	return cats[n-1].ID, nil
+}
+func readAmountOptional(prompt string, def decimal.Decimal) (decimal.Decimal, error) {
+	s := strings.TrimSpace(readLine(fmt.Sprintf("%s (пусто = %s): ", prompt, def.StringFixed(2))))
+	if s == "" {
+		return def, nil
+	}
+	amt, err := decimal.NewFromString(s)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("некорректная сумма: %w", err)
+	}
+	return amt.Round(2), nil
+}
+
+// опциональный ввод типа (-1/1) (пусто = оставить как есть)
+func readTypeOptional(def domain.OperationType) domain.OperationType {
+	for {
+		s := strings.TrimSpace(readLine(fmt.Sprintf("Тип (-1=расход, 1=доход, пусто=%d): ", int(def))))
+		if s == "" {
+			return def
+		}
+		if s == "-1" {
+			return domain.OpExpense
+		}
+		if s == "1" {
+			return domain.OpIncome
+		}
+		fmt.Println("Введите -1, 1 или пусто")
+	}
+}
+
+// опциональный ввод даты (пусто = оставить как есть)
+func readDateOptional(def time.Time) (time.Time, error) {
+	s := strings.TrimSpace(readLine(fmt.Sprintf("Дата (YYYY-MM-DD, пусто=%s): ", def.Format("2006-01-02"))))
+	if s == "" {
+		return def, nil
+	}
+	dt, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("неверный формат даты")
+	}
+	return dt, nil
+}
+
+// выбрать категорию по типу; если allowEmpty=true и пользователь нажал пусто — вернуть defID
+func chooseCategoryOptional(ctx context.Context, cr *repo.PgCategoryRepo, f domain.Factory, t domain.CategoryType, defID domain.CategoryID, allowEmpty bool) (domain.CategoryID, error) {
+	list, err := cr.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	var opts []domain.Category
+	for _, c := range list {
+		if c.Type == t {
+			opts = append(opts, c)
+		}
+	}
+
+	fmt.Println("=== Категории ===")
+	for i, c := range opts {
+		fmt.Printf("%d) %s\n", i+1, c.Name)
+	}
+	if allowEmpty {
+		fmt.Println("Enter) Оставить без изменений")
+	}
+	fmt.Println("0) Создать новую")
+
+	s := readLine("Выбор: ")
+	if s == "" && allowEmpty {
+		return defID, nil
+	}
+	n, _ := strconv.Atoi(s)
+	if n == 0 {
+		name := readLine("Название новой категории: ")
+		c, err := f.NewCategory(name, t)
+		if err != nil {
+			return "", err
+		}
+		if err := cr.Create(ctx, c); err != nil {
+			return "", err
+		}
+		return c.ID, nil
+	}
+	if n >= 1 && n <= len(opts) {
+		return opts[n-1].ID, nil
+	}
+	return "", fmt.Errorf("неверный выбор")
 }

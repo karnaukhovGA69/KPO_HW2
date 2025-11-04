@@ -12,6 +12,25 @@ type PgCategoryRepo struct{ db *pgxpool.Pool }
 
 func NewPgCategoryRepo(db *pgxpool.Pool) *PgCategoryRepo { return &PgCategoryRepo{db: db} }
 
+func (r *PgCategoryRepo) UpdateName(ctx context.Context, id domain.CategoryID, name string) error {
+	_, err := r.db.Exec(ctx, `UPDATE categories SET name=$2 WHERE id=$1`, id, name)
+	return err
+}
+
+// Delete — удалить категорию (упадёт по FK, если есть операции).
+func (r *PgCategoryRepo) Delete(ctx context.Context, id domain.CategoryID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM categories WHERE id=$1`, id)
+	return err
+}
+
+// HasOperations — есть ли операции в категории.
+func (r *PgCategoryRepo) HasOperations(ctx context.Context, id domain.CategoryID) (bool, error) {
+	var n int64
+	if err := r.db.QueryRow(ctx, `SELECT COUNT(1) FROM operations WHERE category_id=$1`, id).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
 func (r *PgCategoryRepo) Create(ctx context.Context, c domain.Category) error {
 	_, err := r.db.Exec(ctx,
 		`INSERT INTO categories(id, type, name) VALUES ($1, $2, $3)`,

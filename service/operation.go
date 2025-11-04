@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -141,6 +142,97 @@ func (s *OperationService) RemoveOperation(ctx context.Context, opID domain.Oper
 
 	// 5) обновить баланс счёта
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET balance=$2 WHERE id=$1`, accID, acc.Balance.StringFixed(2)); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+func (s *OperationService) UpdateOperation(
+	ctx context.Context,
+	opID domain.OperationID,
+	newType domain.OperationType,
+	newAmount decimal.Decimal,
+	newDate time.Time,
+	newCategory domain.CategoryID,
+	newDesc string,
+) error {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1) прочитать старую операцию
+	var oldType int
+	var accID domain.AccountID
+	var oldAmtStr string
+	if err := tx.QueryRow(ctx,
+		`SELECT type, bank_account_id, amount FROM operations WHERE id=$1`, opID,
+	).Scan(&oldType, &accID, &oldAmtStr); err != nil {
+		return err
+	}
+	oldAmt, err := decimal.NewFromString(oldAmtStr)
+	if err != nil {
+		return err
+	}
+
+	// 2) проверить, что категория совпадает по типу с новой операцией
+	var catType int
+	if err := tx.QueryRow(ctx, `SELECT type FROM categories WHERE id=$1`, newCategory).Scan(&catType); err != nil {
+		return err
+	}
+	if catType != int(newType) {
+		return fmt.Errorf("тип категории (%d) не совпадает с типом операции (%d)", catType, int(newType))
+	}
+
+	// 3) заблокировать строку счёта и взять баланс
+	var balStr string
+	if err := tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id=$1 FOR UPDATE`, accID).Scan(&balStr); err != nil {
+		return err
+	}
+	curBal, err := decimal.NewFromString(balStr)
+	if err != nil {
+		return err
+	}
+	acc := domain.BankAccount{ID: accID, Balance: curBal}
+
+	// 4) снять эффект старой операции
+	if domain.OperationType(oldType) == domain.OpIncome {
+		if err := acc.Debit(oldAmt); err != nil {
+			return err
+		}
+	} else {
+		if err := acc.Credit(oldAmt); err != nil {
+			return err
+		}
+	}
+
+	// 5) применить новую операцию
+	newAmount = newAmount.Round(2)
+	if newType == domain.OpIncome {
+		if err := acc.Credit(newAmount); err != nil {
+			return err
+		}
+	} else {
+		if err := acc.Debit(newAmount); err != nil {
+			return err
+		}
+	}
+
+	// 6) обновить операцию
+	if _, err := tx.Exec(ctx,
+		`UPDATE operations
+		    SET type=$2, amount=$3, "date"=$4, description=$5, category_id=$6
+		  WHERE id=$1`,
+		opID, int(newType), newAmount.StringFixed(2), newDate, newDesc, newCategory,
+	); err != nil {
+		return err
+	}
+
+	// 7) записать новый баланс
+	if _, err := tx.Exec(ctx, `UPDATE accounts SET balance=$2 WHERE id=$1`,
+		accID, acc.Balance.StringFixed(2),
+	); err != nil {
 		return err
 	}
 

@@ -52,6 +52,16 @@ func (r *PgAccountRepo) Update(ctx context.Context, a domain.BankAccount) error 
 	}
 	return nil
 }
+func (r *PgAccountRepo) UpdateName(ctx context.Context, id domain.AccountID, name string) error {
+	ct, err := r.db.Exec(ctx, `UPDATE accounts SET name=$2 WHERE id=$1`, id, name)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return errors.New("account not found")
+	}
+	return nil
+}
 func (r *PgAccountRepo) List(ctx context.Context) ([]domain.BankAccount, error) {
 	rows, err := r.db.Query(ctx, `SELECT id, name, balance FROM accounts ORDER BY name`)
 	if err != nil {
