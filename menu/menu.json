@@ -14,6 +14,7 @@
 	{ "key": "export_ops_yaml", "field": "Экспорт операций (YAML)" },
 	{ "key": "import_ops_yaml", "field": "Импорт операций (YAML)" },
 	{ "key": "rename_account", "field": "Переименовать активный счёт" },
+	{ "key": "create_account", "field": "Создать новый счёт" },
 	{ "key": "rename_category", "field": "Переименовать категорию" },
 	{ "key": "delete_category", "field": "Удалить категорию" },
 	{ "key": "add_category", "field": "Создать категорию" },

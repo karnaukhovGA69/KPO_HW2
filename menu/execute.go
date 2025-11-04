@@ -529,11 +529,15 @@ func ensureCategory(ctx context.Context, cr *repo.PgCategoryRepo, f domain.Facto
 	if err != nil {
 		return "", err
 	}
+
+	// Ищем ТОЧНОЕ совпадение по имени и типу
 	for _, c := range list {
-		if strings.EqualFold(c.Name, name) && c.Type == t {
+		if c.Name == name && c.Type == t {
 			return c.ID, nil
 		}
 	}
+
+	// Если не найдена - создаём новую
 	cat, err := f.NewCategory(name, t)
 	if err != nil {
 		return "", err

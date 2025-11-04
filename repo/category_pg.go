@@ -48,7 +48,11 @@ func (r *PgCategoryRepo) Get(ctx context.Context, id domain.CategoryID) (domain.
 }
 
 func (r *PgCategoryRepo) List(ctx context.Context) ([]domain.Category, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, type, name FROM categories ORDER BY name`)
+	rows, err := r.db.Query(ctx, `
+    SELECT DISTINCT ON (type, name) id, type, name
+    FROM categories
+    ORDER BY type, name, id
+  `)
 	if err != nil {
 		return nil, err
 	}
