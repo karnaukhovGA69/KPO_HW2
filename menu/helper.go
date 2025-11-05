@@ -326,23 +326,73 @@ func readDateOptional(def time.Time) (time.Time, error) {
 	}
 }
 
-func ensureCategory(ctx context.Context, cr *repo.PgCategoryRepo, f domain.Factory, name string, t domain.CategoryType) (domain.CategoryID, error) {
-	cats, err := cr.List(ctx)
-	if err != nil {
-		return "", err
+func printSummary(ctx context.Context, d Deps, notice string) error {
+	if notice != "" {
+		fmt.Println(notice)
 	}
-	lname := strings.ToLower(strings.TrimSpace(name))
-	for _, c := range cats {
-		if c.Type == t && strings.ToLower(strings.TrimSpace(c.Name)) == lname {
-			return c.ID, nil
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	sum, err := d.Ana.Summary(ctx, d.AccountID, from, to)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Сводка (30 дней) — Доход: %s | Расход: %s | Итого: %s\n",
+		sum.Income.StringFixed(2), sum.Expense.StringFixed(2), sum.Net.StringFixed(2))
+	return nil
+}
+
+func actionSummaryCat30d(ctx context.Context, d *Deps) error {
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	return printCategoryBreakdownCombined(ctx, d, from, to, "30 дней")
+}
+
+func actionSummaryCatPeriod(ctx context.Context, d *Deps) error {
+	from, _ := readDate("Дата ОТ")
+	to, _ := readDate("Дата ДО")
+	return printCategoryBreakdownCombined(ctx, d, from, to, "период")
+}
+
+func printCategoryBreakdownCombined(ctx context.Context, d *Deps, from, to time.Time, title string) error {
+	bb, err := d.Ana.BreakdownByCategory(ctx, d.AccountID, from, to)
+	if err != nil {
+		return err
+	}
+	type agg struct {
+		Inc decimal.Decimal
+		Exp decimal.Decimal
+	}
+	m := map[string]agg{}
+	for _, x := range bb.Incomes {
+		a := m[x.Category]
+		a.Inc = a.Inc.Add(x.Amount)
+		m[x.Category] = a
+	}
+	for _, x := range bb.Expenses {
+		a := m[x.Category]
+		a.Exp = a.Exp.Add(x.Amount)
+		m[x.Category] = a
+	}
+	if len(m) == 0 {
+		fmt.Println("Нет данных за период")
+		return nil
+	}
+	fmt.Printf("=== Сводка по категориям (%s) ===\n", title)
+	for name, a := range m {
+		tag := "оба"
+		if a.Exp.IsZero() {
+			tag = "доход"
+		} else if a.Inc.IsZero() {
+			tag = "расход"
 		}
+		net := a.Inc.Sub(a.Exp)
+		fmt.Printf("%-20s [%s]  Доход: %8s  Расход: %8s  Итого: %8s\n",
+			name, tag, a.Inc.StringFixed(2), a.Exp.StringFixed(2), net.StringFixed(2))
 	}
-	c, err := f.NewCategory(name, t)
-	if err != nil {
-		return "", err
+	return nil
+}
+
+func strPtrOrNil(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
 	}
-	if err := cr.Create(ctx, c); err != nil {
-		return "", err
-	}
-	return c.ID, nil
+	return &s
 }

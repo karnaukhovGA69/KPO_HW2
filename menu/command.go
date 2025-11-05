@@ -13,7 +13,6 @@ type Command struct {
 	Run  func(ctx context.Context) error
 }
 
-// Декоратор тайминга
 func WithTiming(c Command) Command {
 	return Command{
 		Key:  c.Key,

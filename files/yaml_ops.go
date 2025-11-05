@@ -12,10 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// =======================
-// ====== ЭКСПОРТ ========
-// =======================
-
 type opRowYAML struct {
 	Type        int    `yaml:"type"`
 	Amount      string `yaml:"amount"`
@@ -24,7 +20,6 @@ type opRowYAML struct {
 	Description string `yaml:"description"`
 }
 
-// YAMLEncoder — стратегия кодирования в YAML.
 type YAMLEncoder struct{}
 
 func (YAMLEncoder) EncodeRows(rows []Row) ([]byte, error) {
@@ -41,7 +36,6 @@ func (YAMLEncoder) EncodeRows(rows []Row) ([]byte, error) {
 	return yaml.Marshal(out)
 }
 
-// Публичная точка — сигнатура НЕ менялась.
 func ExportOperationsYAML(
 	ctx context.Context,
 	ops *repo.PgOperationRepo,
@@ -52,10 +46,6 @@ func ExportOperationsYAML(
 ) error {
 	return ExportOperations(ctx, ops, cats, accID, from, to, path, YAMLEncoder{})
 }
-
-// =======================
-// ====== ИМПОРТ =========
-// =======================
 
 type YAMLImporter struct{}
 

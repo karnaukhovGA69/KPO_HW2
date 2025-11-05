@@ -13,23 +13,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// =======================
-// ====== ЭКСПОРТ ========
-// =======================
-
-// CSVEncoder — стратегия кодирования в CSV.
 type CSVEncoder struct{}
 
 func (CSVEncoder) EncodeRows(rows []Row) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	w := csv.NewWriter(buf)
 
-	// заголовок
 	if err := w.Write([]string{"type", "amount", "date", "category", "description"}); err != nil {
 		return nil, err
 	}
 
-	// строки
 	for _, r := range rows {
 		rec := []string{
 			strconv.Itoa(r.Type),
@@ -49,8 +42,6 @@ func (CSVEncoder) EncodeRows(rows []Row) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Публичная точка — сигнатура НЕ менялась.
-// Теперь внутри используем общий каркас ExportOperations + стратегию CSVEncoder.
 func ExportOperationsCSV(
 	ctx context.Context,
 	ops *repo.PgOperationRepo,
@@ -62,11 +53,6 @@ func ExportOperationsCSV(
 	return ExportOperations(ctx, ops, cats, accID, from, to, path, CSVEncoder{})
 }
 
-// =======================
-// ====== ИМПОРТ =========
-// =======================
-
-// Template Method: CSVImporter реализует parse(), общий каркас — в BaseImporter.
 type CSVImporter struct{}
 
 func (CSVImporter) parse(data []byte) ([]Row, error) {
@@ -109,7 +95,6 @@ func (CSVImporter) parse(data []byte) ([]Row, error) {
 	return out, nil
 }
 
-// Публичная точка импорта — вызывает общий каркас.
 func ImportOperationsCSV(path string) ([]Row, error) {
 	base := BaseImporter{parser: CSVImporter{}}
 	return base.Import(path)

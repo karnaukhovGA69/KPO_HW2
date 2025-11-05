@@ -11,10 +11,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// =======================
-// ====== ЭКСПОРТ ========
-// =======================
-
 type opRowJSON struct {
 	Type        int    `json:"type"`        // -1/1
 	Amount      string `json:"amount"`      // "123.45"
@@ -23,7 +19,6 @@ type opRowJSON struct {
 	Description string `json:"description"` // опционально
 }
 
-// JSONEncoder — стратегия кодирования в JSON.
 type JSONEncoder struct{}
 
 func (JSONEncoder) EncodeRows(rows []Row) ([]byte, error) {
@@ -40,7 +35,6 @@ func (JSONEncoder) EncodeRows(rows []Row) ([]byte, error) {
 	return json.MarshalIndent(out, "", "  ")
 }
 
-// Публичная точка — сигнатура НЕ менялась.
 func ExportOperationsJSON(
 	ctx context.Context,
 	ops *repo.PgOperationRepo,
@@ -51,10 +45,6 @@ func ExportOperationsJSON(
 ) error {
 	return ExportOperations(ctx, ops, cats, accID, from, to, path, JSONEncoder{})
 }
-
-// =======================
-// ====== ИМПОРТ =========
-// =======================
 
 type JSONImporter struct{}
 

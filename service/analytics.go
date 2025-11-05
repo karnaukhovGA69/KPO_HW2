@@ -21,7 +21,7 @@ func NewAnalyticsService(ops *repo.PgOperationRepo) *AnalyticsService {
 type Summary struct {
 	Income  decimal.Decimal
 	Expense decimal.Decimal
-	Net     decimal.Decimal // Income - Expense
+	Net     decimal.Decimal // Income(доход) - Expense(расход)
 }
 
 func (s *AnalyticsService) SummaryByPeriod(ctx context.Context, accID domain.AccountID, from, to time.Time) (Summary, error) {
@@ -51,11 +51,10 @@ type CategorySummary struct {
 	Type    domain.CategoryType
 	Income  decimal.Decimal
 	Expense decimal.Decimal
-	Net     decimal.Decimal // Income - Expense
+	Net     decimal.Decimal // Income(доход) - Expense(расход)
 }
 
 func (s *AnalyticsService) ByCategory(ctx context.Context, accID domain.AccountID, from, to time.Time) ([]CategorySummary, error) {
-	// Один SQL с JOIN на categories
 	rows, err := s.ops.Db().Query(ctx, `
 		SELECT c.name, c.type,
 		       SUM(CASE WHEN o.type = 1  THEN o.amount ELSE 0 END) AS income,

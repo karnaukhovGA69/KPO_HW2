@@ -1,4 +1,3 @@
-// repo/cached_category_repo.go
 package repo
 
 import (
@@ -57,7 +56,6 @@ func (r *CachedCategoryRepo) Get(ctx context.Context, id domain.CategoryID) (dom
 	return c, nil
 }
 
-// мутации — инвалидиция
 func (r *CachedCategoryRepo) Create(ctx context.Context, c domain.Category) error {
 	if err := r.inner.Create(ctx, c); err != nil {
 		return err
@@ -94,14 +92,4 @@ func (r *CachedCategoryRepo) invalidate() {
 	defer r.mu.Unlock()
 	r.list = nil
 	r.byID = map[domain.CategoryID]domain.Category{}
-}
-
-type CategoryRepo interface {
-	Create(ctx context.Context, c domain.Category) error
-	Get(ctx context.Context, id domain.CategoryID) (domain.Category, error)
-	List(ctx context.Context) ([]domain.Category, error)
-	UpdateName(ctx context.Context, id domain.CategoryID, name string) error
-	UpdateType(ctx context.Context, id domain.CategoryID, t domain.CategoryType) error
-	Delete(ctx context.Context, id domain.CategoryID) error
-	HasOperations(ctx context.Context, id domain.CategoryID) (bool, error)
 }

@@ -14,8 +14,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// === Операции ===
-
 func actionAddIncome(ctx context.Context, d *Deps) error {
 	amt, desc, err := readAmountAndDesc("Сумма дохода (например 1500.00): ")
 	if err != nil {
@@ -123,8 +121,6 @@ func actionListOpsPeriod(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// --- Сводки (30 дней / произвольный период) — через AnalyticsFacade ---
-
 func actionSummary30d(ctx context.Context, d *Deps) error {
 	return printSummary(ctx, *d, "")
 }
@@ -140,8 +136,6 @@ func actionSummaryPeriod(ctx context.Context, d *Deps) error {
 		sum.Income.StringFixed(2), sum.Expense.StringFixed(2), sum.Net.StringFixed(2))
 	return nil
 }
-
-// === Категории ===
 
 func actionAddCategory(ctx context.Context, d *Deps) error {
 	name := readLine("Название категории: ")
@@ -217,8 +211,6 @@ func actionDeleteCategory(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// === Счета ===
-
 func actionListAccounts(ctx context.Context, d *Deps) error {
 	accs, err := d.AccRepo.List(ctx)
 	if err != nil {
@@ -291,7 +283,6 @@ func actionDeleteAccount(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// NEW: переименование активного счёта (нужно для execute.go -> "rename_account")
 func actionRenameAccount(ctx context.Context, d *Deps) error {
 	newName := readLine("Новое имя активного счёта: ")
 	if strings.TrimSpace(newName) == "" {
@@ -304,8 +295,6 @@ func actionRenameAccount(ctx context.Context, d *Deps) error {
 	fmt.Println("Счёт переименован.")
 	return nil
 }
-
-// === Экспорт/импорт операций ===
 
 func actionExportOpsCSV(ctx context.Context, d *Deps) error {
 	path := readLine("Путь к файлу (напр. ops.csv): ")
@@ -448,8 +437,6 @@ func actionImportOpsYAML(ctx context.Context, d *Deps) error {
 	return printSummary(ctx, *d, fmt.Sprintf("Импортировано операций: %d.", len(rows)))
 }
 
-// === Редактирование / удаление операций — через фасад ===
-
 func actionEditOp30d(ctx context.Context, d *Deps) error {
 	from, to := time.Now().AddDate(0, 0, -30), time.Now()
 	opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
@@ -462,7 +449,7 @@ func actionEditOp30d(ctx context.Context, d *Deps) error {
 		return err
 	}
 
-	newType := readTypeOptional(old.Type) // возвращает domain.OperationType
+	newType := readTypeOptional(old.Type)
 	newAmt, err := readAmountOptional("Сумма", old.Amount)
 	if err != nil {
 		return err
@@ -472,7 +459,6 @@ func actionEditOp30d(ctx context.Context, d *Deps) error {
 		return err
 	}
 
-	// указатели только если значение поменялось
 	var newAmtPtr *decimal.Decimal
 	if !newAmt.Equal(old.Amount) {
 		v := newAmt
@@ -484,7 +470,6 @@ func actionEditOp30d(ctx context.Context, d *Deps) error {
 		newDatePtr = &v
 	}
 
-	// категория по имени (фасаду нужен name)
 	var newCatNamePtr *string
 	if newType != old.Type {
 		newCatID, err := chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
@@ -512,7 +497,6 @@ func actionEditOp30d(ctx context.Context, d *Deps) error {
 		newCatNamePtr = &n
 	}
 
-	// ForcedType — только если тип поменялся
 	var forced *domain.CategoryType
 	if newType != old.Type {
 		switch newType {
@@ -554,77 +538,4 @@ func actionDeleteOp30d(ctx context.Context, d *Deps) error {
 		return err
 	}
 	return printSummary(ctx, *d, "Операция удалена.")
-}
-
-// === helpers ===
-
-func printSummary(ctx context.Context, d Deps, notice string) error {
-	if notice != "" {
-		fmt.Println(notice)
-	}
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	sum, err := d.Ana.Summary(ctx, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Сводка (30 дней) — Доход: %s | Расход: %s | Итого: %s\n",
-		sum.Income.StringFixed(2), sum.Expense.StringFixed(2), sum.Net.StringFixed(2))
-	return nil
-}
-
-func actionSummaryCat30d(ctx context.Context, d *Deps) error {
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	return printCategoryBreakdownCombined(ctx, d, from, to, "30 дней")
-}
-
-func actionSummaryCatPeriod(ctx context.Context, d *Deps) error {
-	from, _ := readDate("Дата ОТ")
-	to, _ := readDate("Дата ДО")
-	return printCategoryBreakdownCombined(ctx, d, from, to, "период")
-}
-
-func printCategoryBreakdownCombined(ctx context.Context, d *Deps, from, to time.Time, title string) error {
-	bb, err := d.Ana.BreakdownByCategory(ctx, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-	type agg struct {
-		Inc decimal.Decimal
-		Exp decimal.Decimal
-	}
-	m := map[string]agg{}
-	for _, x := range bb.Incomes {
-		a := m[x.Category]
-		a.Inc = a.Inc.Add(x.Amount)
-		m[x.Category] = a
-	}
-	for _, x := range bb.Expenses {
-		a := m[x.Category]
-		a.Exp = a.Exp.Add(x.Amount)
-		m[x.Category] = a
-	}
-	if len(m) == 0 {
-		fmt.Println("Нет данных за период")
-		return nil
-	}
-	fmt.Printf("=== Сводка по категориям (%s) ===\n", title)
-	for name, a := range m {
-		tag := "оба"
-		if a.Exp.IsZero() {
-			tag = "доход"
-		} else if a.Inc.IsZero() {
-			tag = "расход"
-		}
-		net := a.Inc.Sub(a.Exp)
-		fmt.Printf("%-20s [%s]  Доход: %8s  Расход: %8s  Итого: %8s\n",
-			name, tag, a.Inc.StringFixed(2), a.Exp.StringFixed(2), net.StringFixed(2))
-	}
-	return nil
-}
-
-func strPtrOrNil(s string) *string {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	return &s
 }

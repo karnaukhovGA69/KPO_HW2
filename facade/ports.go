@@ -6,8 +6,6 @@ import (
 	"main/domain"
 )
 
-// CategoryRepo — минимальный порт для фасадов.
-// Его реализуют и PgCategoryRepo, и CachedCategoryRepo.
 type CategoryRepo interface {
 	List(ctx context.Context) ([]domain.Category, error)
 	Get(ctx context.Context, id domain.CategoryID) (domain.Category, error)

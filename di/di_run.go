@@ -1,4 +1,3 @@
-// di/di_run.go
 package di
 
 import (
@@ -25,19 +24,17 @@ type App struct {
 
 func Build(ctx context.Context) (*App, error) {
 	c := dig.New()
-
-	// --- базовые зависимости
+	c.Provide(func(p *pgxpool.Pool) service.TxStarter { return p })
 	if err := c.Provide(func() context.Context { return ctx }); err != nil {
 		return nil, err
 	}
-	if err := c.Provide(db.Connect); err != nil { // *pgxpool.Pool
+	if err := c.Provide(db.Connect); err != nil {
 		return nil, err
 	}
 	if err := c.Provide(func() domain.Factory { return domain.Factory{} }); err != nil {
 		return nil, err
 	}
 
-	// --- репозитории
 	if err := c.Provide(repo.NewPgAccountRepo); err != nil {
 		return nil, err
 	}
@@ -48,7 +45,6 @@ func Build(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 
-	// --- сервисы (если используются где-то ещё)
 	if err := c.Provide(service.NewOperationService); err != nil {
 		return nil, err
 	}
@@ -56,7 +52,6 @@ func Build(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 
-	// --- путь к меню для menu.Load
 	if err := c.Provide(func() string {
 		if p := os.Getenv("MENU_PATH"); p != "" {
 			return p
@@ -66,12 +61,10 @@ func Build(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 
-	// --- само меню
 	if err := c.Provide(menu.Load); err != nil {
 		return nil, err
 	}
 
-	// --- сборка App
 	var app *App
 	err := c.Invoke(func(
 		ctx context.Context,
@@ -81,6 +74,8 @@ func Build(ctx context.Context) (*App, error) {
 		accounts *repo.PgAccountRepo,
 		cats *repo.PgCategoryRepo,
 		ops *repo.PgOperationRepo,
+		opSvc *service.OperationService,
+		anaSvc *service.AnalyticsService,
 	) error {
 		id, name, err := ensureActiveAccount(ctx, accounts, f)
 		if err != nil {
@@ -88,10 +83,8 @@ func Build(ctx context.Context) (*App, error) {
 		}
 		fmt.Printf("Активный счёт: %s (%s)\n\n", name, id)
 
-		// Proxy-кэш для категорий
 		catsCached := repo.NewCachedCategoryRepo(cats)
 
-		// Фасады используют кэш
 		accFacade := facade.AccountFacade{
 			F:          f,
 			Accounts:   accounts,
@@ -106,18 +99,17 @@ func Build(ctx context.Context) (*App, error) {
 			Accounts:   accounts,
 			Categories: catsCached,
 			Operations: ops,
+			OpSvc:      opSvc,
 		}
 		analytics := facade.AnalyticsFacade{
-			Operations: ops,
-			Categories: catsCached,
+			Svc: anaSvc,
 		}
 
-		// В Deps кладём оригинальный PgCategoryRepo, чтобы не ломать типы
 		deps := menu.Deps{
 			Pool:      pool,
 			Factory:   f,
 			AccRepo:   accounts,
-			CatRepo:   cats, // <-- ВАЖНО: здесь НЕ catsCached
+			CatRepo:   cats,
 			OpsRepo:   ops,
 			AccountID: id,
 

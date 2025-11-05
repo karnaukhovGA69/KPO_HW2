@@ -29,10 +29,3 @@ type Deps struct {
 	Cat facade.CategoryFacade
 	Ana facade.AnalyticsFacade
 }
-
-func (m Menu) KeyAt(index int) string {
-	if index < 1 || index > len(m.Items) {
-		return ""
-	}
-	return m.Items[index-1].Key
-}

@@ -17,7 +17,6 @@ func Run(ctx context.Context, m Menu, d *Deps) {
 			continue
 		}
 
-		// Берём выбранный пункт меню
 		if idx < 1 || idx > len(m.Items) {
 			fmt.Println("Неверный выбор")
 			WaitEnter()

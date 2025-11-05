@@ -8,11 +8,11 @@ import (
 
 	"main/domain"
 	"main/repo"
+	"main/service"
 
 	"github.com/shopspring/decimal"
 )
 
-// Входы для сценариев
 type AddOpInput struct {
 	AccountID    domain.AccountID
 	Amount       decimal.Decimal
@@ -24,10 +24,9 @@ type EditOpInput struct {
 	OperationID domain.OperationID
 	NewAmount   *decimal.Decimal
 	NewWhen     *time.Time
-	NewCategory *string // имя категории
+	NewCategory *string
 	NewDesc     *string
-	// Если меняем тип операции, фасаду подсказывают ожидаемый тип категории
-	ForcedType *domain.CategoryType
+	ForcedType  *domain.CategoryType
 }
 
 type OperationFacade struct {
@@ -35,6 +34,8 @@ type OperationFacade struct {
 	Accounts   *repo.PgAccountRepo
 	Categories CategoryRepo
 	Operations *repo.PgOperationRepo
+
+	OpSvc *service.OperationService
 }
 
 func (f OperationFacade) AddIncome(ctx context.Context, in AddOpInput) (domain.Operation, error) {
@@ -48,7 +49,6 @@ func (f OperationFacade) add(ctx context.Context, t domain.OperationType, in Add
 	if strings.TrimSpace(in.CategoryName) == "" {
 		return domain.Operation{}, errors.New("category is required")
 	}
-	// найти / создать категорию нужного типа по имени
 	cats, err := f.Categories.List(ctx)
 	if err != nil {
 		return domain.Operation{}, err
@@ -115,15 +115,12 @@ func (f OperationFacade) Edit(ctx context.Context, in EditOpInput) (domain.Opera
 
 	newOp := old
 
-	// Сумма
 	if in.NewAmount != nil {
 		newOp.Amount = *in.NewAmount
 	}
-	// Дата
 	if in.NewWhen != nil {
 		newOp.Date = *in.NewWhen
 	}
-	// Категория по имени
 	if in.NewCategory != nil && strings.TrimSpace(*in.NewCategory) != "" {
 		cats, err := f.Categories.List(ctx)
 		if err != nil {
@@ -132,7 +129,6 @@ func (f OperationFacade) Edit(ctx context.Context, in EditOpInput) (domain.Opera
 		var foundID domain.CategoryID
 		for _, c := range cats {
 			if strings.EqualFold(c.Name, *in.NewCategory) {
-				// если навязывают тип — проверим соответствие
 				if in.ForcedType == nil || c.Type == *in.ForcedType {
 					foundID = c.ID
 					break
@@ -140,7 +136,6 @@ func (f OperationFacade) Edit(ctx context.Context, in EditOpInput) (domain.Opera
 			}
 		}
 		if foundID == "" {
-			// если ForcedType не задан — определяем по типу СТАРОЙ операции
 			ct := domain.CatExpense
 			if old.IsIncome() {
 				ct = domain.CatIncome
@@ -159,12 +154,10 @@ func (f OperationFacade) Edit(ctx context.Context, in EditOpInput) (domain.Opera
 		}
 		newOp.Category = foundID
 	}
-	// Описание
 	if in.NewDesc != nil {
 		newOp.Description = *in.NewDesc
 	}
 
-	// Баланс при изменении суммы
 	if !newOp.Amount.Equal(old.Amount) {
 		acc, err := f.Accounts.Get(ctx, old.BankAccount)
 		if err != nil {
@@ -172,7 +165,6 @@ func (f OperationFacade) Edit(ctx context.Context, in EditOpInput) (domain.Opera
 		}
 		diff := newOp.Amount.Sub(old.Amount)
 		if old.IsIncome() {
-			// доход стал больше/меньше
 			if diff.GreaterThan(decimal.Zero) {
 				if err := acc.Credit(diff); err != nil {
 					return domain.Operation{}, err
@@ -198,16 +190,12 @@ func (f OperationFacade) Edit(ctx context.Context, in EditOpInput) (domain.Opera
 		}
 	}
 
-	// NB: если у тебя есть Update в PgOperationRepo — тут его вызывай.
-	// Иначе оставляем newOp как результат без сохранения.
 	return newOp, nil
 }
 
 func (f OperationFacade) Delete(ctx context.Context, id domain.OperationID) error {
-	// Реализация зависит от методов твоего репозитория.
-	// Если в PgOperationRepo есть Delete(id) — здесь:
-	// 1) r.Operations.Get(ctx, id)
-	// 2) откатить баланс (обратно)
-	// 3) r.Operations.Delete(ctx, id)
-	return errors.New("Delete not implemented in OperationFacade (requires repo method)")
+	if f.OpSvc == nil {
+		return errors.New("operation service not wired: cannot delete")
+	}
+	return f.OpSvc.RemoveOperation(ctx, id)
 }

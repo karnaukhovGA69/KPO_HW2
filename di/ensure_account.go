@@ -10,6 +10,7 @@ import (
 
 	"main/domain"
 	"main/repo"
+	"main/state"
 )
 
 func ensureActiveAccount(ctx context.Context, accRepo *repo.PgAccountRepo, f domain.Factory) (domain.AccountID, string, error) {
@@ -26,7 +27,16 @@ func ensureActiveAccount(ctx context.Context, accRepo *repo.PgAccountRepo, f dom
 		if err := accRepo.Create(ctx, acc); err != nil {
 			return "", "", err
 		}
+		_ = state.SaveAccountID(string(acc.ID))
 		return acc.ID, acc.Name, nil
+	}
+
+	if saved, err := state.LoadAccountID(); err == nil && saved != "" {
+		for _, a := range accs {
+			if string(a.ID) == saved {
+				return a.ID, a.Name, nil
+			}
+		}
 	}
 
 	fmt.Println("=== Выберите счёт ===")
@@ -47,13 +57,16 @@ func ensureActiveAccount(ctx context.Context, accRepo *repo.PgAccountRepo, f dom
 		if err := accRepo.Create(ctx, acc); err != nil {
 			return "", "", err
 		}
+		_ = state.SaveAccountID(string(acc.ID))
 		return acc.ID, acc.Name, nil
 	}
 
 	if n >= 1 && n <= len(accs) {
+		_ = state.SaveAccountID(string(accs[n-1].ID))
 		return accs[n-1].ID, accs[n-1].Name, nil
 	}
 
+	_ = state.SaveAccountID(string(accs[0].ID))
 	return accs[0].ID, accs[0].Name, nil
 }
 
