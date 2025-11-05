@@ -1,8 +1,8 @@
 package files
 
 import (
+	"bytes"
 	"context"
-	"os"
 	"time"
 
 	"main/domain"
@@ -12,6 +12,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// =======================
+// ====== ЭКСПОРТ ========
+// =======================
+
 type opRowYAML struct {
 	Type        int    `yaml:"type"`
 	Amount      string `yaml:"amount"`
@@ -20,62 +24,47 @@ type opRowYAML struct {
 	Description string `yaml:"description"`
 }
 
-// ExportOperationsYAML — выгружает операции счета за период в YAML.
-func ExportOperationsYAML(ctx context.Context, ops *repo.PgOperationRepo, cats *repo.PgCategoryRepo,
-	accID domain.AccountID, from, to time.Time, path string) error {
+// YAMLEncoder — стратегия кодирования в YAML.
+type YAMLEncoder struct{}
 
-	list, err := ops.ListByAccount(ctx, accID, from, to)
-	if err != nil {
-		return err
-	}
-
-	cmap := map[domain.CategoryID]string{}
-	getCatName := func(id domain.CategoryID) string {
-		if n, ok := cmap[id]; ok {
-			return n
-		}
-		c, err := cats.Get(ctx, id)
-		if err != nil {
-			return ""
-		}
-		cmap[id] = c.Name
-		return c.Name
-	}
-
-	out := make([]opRowYAML, 0, len(list))
-	for _, o := range list {
-		t := 1
-		if o.IsExpense() {
-			t = -1
-		}
+func (YAMLEncoder) EncodeRows(rows []Row) ([]byte, error) {
+	out := make([]opRowYAML, 0, len(rows))
+	for _, r := range rows {
 		out = append(out, opRowYAML{
-			Type:        t,
-			Amount:      o.Amount.StringFixed(2),
-			Date:        o.Date.Format("2006-01-02"),
-			Category:    getCatName(o.Category),
-			Description: o.Description,
+			Type:        r.Type,
+			Amount:      r.Amount.StringFixed(2),
+			Date:        r.Date.Format("2006-01-02"),
+			Category:    r.Category,
+			Description: r.Description,
 		})
 	}
-
-	b, err := yaml.Marshal(out)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0644)
+	return yaml.Marshal(out)
 }
 
-// ImportOperationsYAML — читает YAML и возвращает универсальные Row.
-func ImportOperationsYAML(path string) ([]Row, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+// Публичная точка — сигнатура НЕ менялась.
+func ExportOperationsYAML(
+	ctx context.Context,
+	ops *repo.PgOperationRepo,
+	cats *repo.PgCategoryRepo,
+	accID domain.AccountID,
+	from, to time.Time,
+	path string,
+) error {
+	return ExportOperations(ctx, ops, cats, accID, from, to, path, YAMLEncoder{})
+}
 
+// =======================
+// ====== ИМПОРТ =========
+// =======================
+
+type YAMLImporter struct{}
+
+func (YAMLImporter) parse(data []byte) ([]Row, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var in []opRowYAML
-	if err := yaml.Unmarshal(b, &in); err != nil {
+	if err := dec.Decode(&in); err != nil {
 		return nil, err
 	}
-
 	out := make([]Row, 0, len(in))
 	for _, r := range in {
 		amt, err := decimal.NewFromString(r.Amount)
@@ -95,4 +84,9 @@ func ImportOperationsYAML(path string) ([]Row, error) {
 		})
 	}
 	return out, nil
+}
+
+func ImportOperationsYAML(path string) ([]Row, error) {
+	base := BaseImporter{parser: YAMLImporter{}}
+	return base.Import(path)
 }

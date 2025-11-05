@@ -1,9 +1,9 @@
 package files
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
-	"os"
 	"strconv"
 	"time"
 
@@ -13,8 +13,44 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ExportOperationsCSV — выгружает операции счета за период в CSV.
-// Формат: type,amount,date,category,description
+// =======================
+// ====== ЭКСПОРТ ========
+// =======================
+
+// CSVEncoder — стратегия кодирования в CSV.
+type CSVEncoder struct{}
+
+func (CSVEncoder) EncodeRows(rows []Row) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	w := csv.NewWriter(buf)
+
+	// заголовок
+	if err := w.Write([]string{"type", "amount", "date", "category", "description"}); err != nil {
+		return nil, err
+	}
+
+	// строки
+	for _, r := range rows {
+		rec := []string{
+			strconv.Itoa(r.Type),
+			r.Amount.StringFixed(2),
+			r.Date.Format("2006-01-02"),
+			r.Category,
+			r.Description,
+		}
+		if err := w.Write(rec); err != nil {
+			return nil, err
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// Публичная точка — сигнатура НЕ менялась.
+// Теперь внутри используем общий каркас ExportOperations + стратегию CSVEncoder.
 func ExportOperationsCSV(
 	ctx context.Context,
 	ops *repo.PgOperationRepo,
@@ -23,74 +59,24 @@ func ExportOperationsCSV(
 	from, to time.Time,
 	path string,
 ) error {
-	list, err := ops.ListByAccount(ctx, accID, from, to)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	w := csv.NewWriter(f)
-	defer w.Flush()
-
-	// хедер
-	if err := w.Write([]string{"type", "amount", "date", "category", "description"}); err != nil {
-		return err
-	}
-
-	// кэш id->name категорий
-	cmap := map[domain.CategoryID]string{}
-	getCatName := func(id domain.CategoryID) string {
-		if n, ok := cmap[id]; ok {
-			return n
-		}
-		c, err := cats.Get(ctx, id)
-		if err != nil {
-			return ""
-		}
-		cmap[id] = c.Name
-		return c.Name
-	}
-
-	for _, o := range list {
-		t := 1
-		if o.IsExpense() {
-			t = -1
-		}
-		rec := []string{
-			strconv.Itoa(t),
-			o.Amount.StringFixed(2),
-			o.Date.Format("2006-01-02"),
-			getCatName(o.Category),
-			o.Description,
-		}
-		if err := w.Write(rec); err != nil {
-			return err
-		}
-	}
-	return w.Error()
+	return ExportOperations(ctx, ops, cats, accID, from, to, path, CSVEncoder{})
 }
 
-// ImportOperationsCSV — читает CSV в универсальные строки Row.
-// Преобразование Row → доменные операции делается в menu.Execute.
-func ImportOperationsCSV(path string) ([]Row, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
+// =======================
+// ====== ИМПОРТ =========
+// =======================
 
-	r := csv.NewReader(f)
+// Template Method: CSVImporter реализует parse(), общий каркас — в BaseImporter.
+type CSVImporter struct{}
+
+func (CSVImporter) parse(data []byte) ([]Row, error) {
+	r := csv.NewReader(bytes.NewReader(data))
 	rows, err := r.ReadAll()
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) <= 1 {
-		return nil, nil // только хедер
+		return nil, nil
 	}
 
 	out := make([]Row, 0, len(rows)-1)
@@ -121,4 +107,10 @@ func ImportOperationsCSV(path string) ([]Row, error) {
 		})
 	}
 	return out, nil
+}
+
+// Публичная точка импорта — вызывает общий каркас.
+func ImportOperationsCSV(path string) ([]Row, error) {
+	base := BaseImporter{parser: CSVImporter{}}
+	return base.Import(path)
 }

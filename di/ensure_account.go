@@ -18,7 +18,6 @@ func ensureActiveAccount(ctx context.Context, accRepo *repo.PgAccountRepo, f dom
 		return "", "", err
 	}
 
-	// Если счетов нет - создаём первый
 	if len(accs) == 0 {
 		acc, err := f.NewBankAccount("Основной")
 		if err != nil {
@@ -30,7 +29,6 @@ func ensureActiveAccount(ctx context.Context, accRepo *repo.PgAccountRepo, f dom
 		return acc.ID, acc.Name, nil
 	}
 
-	// Если счета есть - предлагаем выбрать или создать новый
 	fmt.Println("=== Выберите счёт ===")
 	for i, a := range accs {
 		fmt.Printf("%d) %s | %s\n", i+1, a.Name, a.Balance.StringFixed(2))
@@ -56,7 +54,6 @@ func ensureActiveAccount(ctx context.Context, accRepo *repo.PgAccountRepo, f dom
 		return accs[n-1].ID, accs[n-1].Name, nil
 	}
 
-	// По умолчанию первый счёт
 	return accs[0].ID, accs[0].Name, nil
 }
 

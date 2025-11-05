@@ -24,7 +24,6 @@ type Summary struct {
 	Net     decimal.Decimal // Income - Expense
 }
 
-// SummaryByPeriod — агрегирует операции счета за период [from; to].
 func (s *AnalyticsService) SummaryByPeriod(ctx context.Context, accID domain.AccountID, from, to time.Time) (Summary, error) {
 	list, err := s.ops.ListByAccount(ctx, accID, from, to)
 	if err != nil {
@@ -47,7 +46,6 @@ func (s *AnalyticsService) SummaryByPeriod(ctx context.Context, accID domain.Acc
 	}, nil
 }
 
-// CategorySummary — агрегат по категории.
 type CategorySummary struct {
 	Name    string
 	Type    domain.CategoryType
@@ -56,7 +54,6 @@ type CategorySummary struct {
 	Net     decimal.Decimal // Income - Expense
 }
 
-// ByCategory — агрегирует операции счета по категориям за период [from; to].
 func (s *AnalyticsService) ByCategory(ctx context.Context, accID domain.AccountID, from, to time.Time) ([]CategorySummary, error) {
 	// Один SQL с JOIN на categories
 	rows, err := s.ops.Db().Query(ctx, `

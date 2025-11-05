@@ -2,6 +2,7 @@ package menu
 
 import (
 	"main/domain"
+	"main/facade"
 	"main/repo"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,17 +17,19 @@ type Menu struct {
 	Items []Item
 }
 type Deps struct {
-	Pool    *pgxpool.Pool  // подключение к PG (pool)
-	Factory domain.Factory // доменная фабрика
+	Pool      *pgxpool.Pool
+	Factory   domain.Factory
+	AccRepo   *repo.PgAccountRepo
+	CatRepo   *repo.PgCategoryRepo
+	OpsRepo   *repo.PgOperationRepo
+	AccountID domain.AccountID
 
-	AccRepo *repo.PgAccountRepo
-	CatRepo *repo.PgCategoryRepo
-	OpsRepo *repo.PgOperationRepo
-
-	AccountID domain.AccountID // активный счёт
+	Op  facade.OperationFacade
+	Acc facade.AccountFacade
+	Cat facade.CategoryFacade
+	Ana facade.AnalyticsFacade
 }
 
-// KeyAt — вернуть ключ по номеру пункта (1..N), "" если мимо.
 func (m Menu) KeyAt(index int) string {
 	if index < 1 || index > len(m.Items) {
 		return ""

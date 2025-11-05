@@ -13,7 +13,6 @@ import (
 
 	"main/domain"
 	"main/repo"
-	"main/service"
 )
 
 var stdin = bufio.NewReader(os.Stdin)
@@ -55,9 +54,8 @@ func readDate(label string) (time.Time, error) {
 			fmt.Println("Формат даты неверный, ожидается YYYY-MM-DD")
 			continue
 		}
-		// нормализуем до даты
+
 		t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
-		// запрет на будущее (сегодня можно)
 		now := time.Now().In(time.Local)
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 		if t.After(today) {
@@ -77,8 +75,6 @@ func confirm(prompt string) bool {
 	s := strings.ToLower(strings.TrimSpace(readLine(prompt + " [y/N]: ")))
 	return s == "y" || s == "yes" || s == "д" || s == "да"
 }
-
-// ===== выбор сущностей / рендер =====
 
 func chooseAccount(ctx context.Context, ar *repo.PgAccountRepo) (domain.AccountID, error) {
 	accs, err := ar.List(ctx)
@@ -237,7 +233,6 @@ func chooseOperation(ctx context.Context, or *repo.PgOperationRepo, cr *repo.PgC
 		if o.IsExpense() {
 			typ = "расход"
 		}
-		// подтянем название категории (если нужно)
 		catName := ""
 		if o.Category != "" {
 			if c, err := cr.Get(ctx, o.Category); err == nil {
@@ -331,8 +326,6 @@ func readDateOptional(def time.Time) (time.Time, error) {
 	}
 }
 
-// ===== недостающие хелперы, на которые ссылаются действия =====
-
 func ensureCategory(ctx context.Context, cr *repo.PgCategoryRepo, f domain.Factory, name string, t domain.CategoryType) (domain.CategoryID, error) {
 	cats, err := cr.List(ctx)
 	if err != nil {
@@ -352,19 +345,4 @@ func ensureCategory(ctx context.Context, cr *repo.PgCategoryRepo, f domain.Facto
 		return "", err
 	}
 	return c.ID, nil
-}
-
-func printSummary(ctx context.Context, d Deps, notice string) error {
-	if notice != "" {
-		fmt.Println(notice)
-	}
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	an := service.NewAnalyticsService(d.OpsRepo)
-	sum, err := an.SummaryByPeriod(ctx, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Сводка (30 дней) — Доход: %s | Расход: %s | Итого: %s\n",
-		sum.Income.StringFixed(2), sum.Expense.StringFixed(2), sum.Net.StringFixed(2))
-	return nil
 }

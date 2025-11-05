@@ -6,7 +6,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Row — универсальная запись операции для импорт/экспорт.
 type Row struct {
 	Type        int             `json:"type" yaml:"type"`         // -1 расход, 1 доход
 	Amount      decimal.Decimal `json:"amount" yaml:"amount"`     // > 0, 2 знака

@@ -3,7 +3,6 @@ package files
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"time"
 
 	"main/domain"
@@ -12,7 +11,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// DTO для JSON (строки для денег/даты)
+// =======================
+// ====== ЭКСПОРТ ========
+// =======================
+
 type opRowJSON struct {
 	Type        int    `json:"type"`        // -1/1
 	Amount      string `json:"amount"`      // "123.45"
@@ -21,63 +23,46 @@ type opRowJSON struct {
 	Description string `json:"description"` // опционально
 }
 
-// ExportOperationsJSON — выгружает операции счета за период в JSON.
-func ExportOperationsJSON(ctx context.Context, ops *repo.PgOperationRepo, cats *repo.PgCategoryRepo,
-	accID domain.AccountID, from, to time.Time, path string) error {
+// JSONEncoder — стратегия кодирования в JSON.
+type JSONEncoder struct{}
 
-	list, err := ops.ListByAccount(ctx, accID, from, to)
-	if err != nil {
-		return err
-	}
-
-	// маленький кэш id->name
-	cmap := map[domain.CategoryID]string{}
-	getCatName := func(id domain.CategoryID) string {
-		if n, ok := cmap[id]; ok {
-			return n
-		}
-		c, err := cats.Get(ctx, id)
-		if err != nil {
-			return ""
-		}
-		cmap[id] = c.Name
-		return c.Name
-	}
-
-	out := make([]opRowJSON, 0, len(list))
-	for _, o := range list {
-		t := 1
-		if o.IsExpense() {
-			t = -1
-		}
+func (JSONEncoder) EncodeRows(rows []Row) ([]byte, error) {
+	out := make([]opRowJSON, 0, len(rows))
+	for _, r := range rows {
 		out = append(out, opRowJSON{
-			Type:        t,
-			Amount:      o.Amount.StringFixed(2),
-			Date:        o.Date.Format("2006-01-02"),
-			Category:    getCatName(o.Category),
-			Description: o.Description,
+			Type:        r.Type,
+			Amount:      r.Amount.StringFixed(2),
+			Date:        r.Date.Format("2006-01-02"),
+			Category:    r.Category,
+			Description: r.Description,
 		})
 	}
-
-	b, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0644)
+	return json.MarshalIndent(out, "", "  ")
 }
 
-// ImportOperationsJSON — читает JSON и возвращает универсальные Row (как из CSV).
-func ImportOperationsJSON(path string) ([]Row, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+// Публичная точка — сигнатура НЕ менялась.
+func ExportOperationsJSON(
+	ctx context.Context,
+	ops *repo.PgOperationRepo,
+	cats *repo.PgCategoryRepo,
+	accID domain.AccountID,
+	from, to time.Time,
+	path string,
+) error {
+	return ExportOperations(ctx, ops, cats, accID, from, to, path, JSONEncoder{})
+}
 
+// =======================
+// ====== ИМПОРТ =========
+// =======================
+
+type JSONImporter struct{}
+
+func (JSONImporter) parse(data []byte) ([]Row, error) {
 	var in []opRowJSON
-	if err := json.Unmarshal(b, &in); err != nil {
+	if err := json.Unmarshal(data, &in); err != nil {
 		return nil, err
 	}
-
 	out := make([]Row, 0, len(in))
 	for _, r := range in {
 		amt, err := decimal.NewFromString(r.Amount)
@@ -97,4 +82,9 @@ func ImportOperationsJSON(path string) ([]Row, error) {
 		})
 	}
 	return out, nil
+}
+
+func ImportOperationsJSON(path string) ([]Row, error) {
+	base := BaseImporter{parser: JSONImporter{}}
+	return base.Import(path)
 }

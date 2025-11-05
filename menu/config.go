@@ -5,7 +5,6 @@ import (
 	"os"
 )
 
-// Load — загрузить конфиг меню из JSON-файла.
 func Load(path string) (Menu, error) {
 	f, err := os.Open(path)
 	if err != nil {

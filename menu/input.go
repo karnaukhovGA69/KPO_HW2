@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// ReadIndex — спросить у пользователя номер пункта и вернуть его
 func ReadIndex(count int) (int, error) {
 	in := bufio.NewReader(os.Stdin)
 	fmt.Printf("Выбор (1..%d): ", count)

@@ -1,4 +1,3 @@
-// menu/actions.go
 package menu
 
 import (
@@ -8,12 +7,14 @@ import (
 	"time"
 
 	"main/domain"
+	"main/facade"
 	"main/files"
-	"main/service"
 	"main/state"
+
+	"github.com/shopspring/decimal"
 )
 
-// ===== ОПЕРАЦИИ =====
+// === Операции ===
 
 func actionAddIncome(ctx context.Context, d *Deps) error {
 	amt, desc, err := readAmountAndDesc("Сумма дохода (например 1500.00): ")
@@ -28,8 +29,19 @@ func actionAddIncome(ctx context.Context, d *Deps) error {
 	if err != nil {
 		return err
 	}
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
-	if _, err := opSvc.ApplyOperation(ctx, domain.OpIncome, d.AccountID, amt, when, catID, desc); err != nil {
+	cat, err := d.CatRepo.Get(ctx, catID)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.Op.AddIncome(ctx, facade.AddOpInput{
+		AccountID:    d.AccountID,
+		Amount:       amt,
+		When:         when,
+		CategoryName: cat.Name,
+		Description:  desc,
+	})
+	if err != nil {
 		return err
 	}
 	return printSummary(ctx, *d, "Доход добавлен.")
@@ -48,8 +60,19 @@ func actionAddExpense(ctx context.Context, d *Deps) error {
 	if err != nil {
 		return err
 	}
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
-	if _, err := opSvc.ApplyOperation(ctx, domain.OpExpense, d.AccountID, amt, when, catID, desc); err != nil {
+	cat, err := d.CatRepo.Get(ctx, catID)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.Op.AddExpense(ctx, facade.AddOpInput{
+		AccountID:    d.AccountID,
+		Amount:       amt,
+		When:         when,
+		CategoryName: cat.Name,
+		Description:  desc,
+	})
+	if err != nil {
 		return err
 	}
 	return printSummary(ctx, *d, "Расход добавлен.")
@@ -100,7 +123,7 @@ func actionListOpsPeriod(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// ===== СВОДКИ =====
+// --- Сводки (30 дней / произвольный период) — через AnalyticsFacade ---
 
 func actionSummary30d(ctx context.Context, d *Deps) error {
 	return printSummary(ctx, *d, "")
@@ -109,8 +132,7 @@ func actionSummary30d(ctx context.Context, d *Deps) error {
 func actionSummaryPeriod(ctx context.Context, d *Deps) error {
 	from, _ := readDate("Дата ОТ")
 	to, _ := readDate("Дата ДО")
-	an := service.NewAnalyticsService(d.OpsRepo)
-	sum, err := an.SummaryByPeriod(ctx, d.AccountID, from, to)
+	sum, err := d.Ana.Summary(ctx, d.AccountID, from, to)
 	if err != nil {
 		return err
 	}
@@ -119,7 +141,7 @@ func actionSummaryPeriod(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// ===== КАТЕГОРИИ =====
+// === Категории ===
 
 func actionAddCategory(ctx context.Context, d *Deps) error {
 	name := readLine("Название категории: ")
@@ -155,7 +177,47 @@ func actionListCategories(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// ===== СЧЕТА =====
+func actionRenameCategory(ctx context.Context, d *Deps) error {
+	catID, err := chooseAnyCategory(ctx, d.CatRepo)
+	if err != nil {
+		return err
+	}
+	newName := readLine("Новое имя категории: ")
+	if strings.TrimSpace(newName) == "" {
+		fmt.Println("Имя пустое")
+		return nil
+	}
+	if err := d.CatRepo.UpdateName(ctx, catID, newName); err != nil {
+		return err
+	}
+	fmt.Println("Категория переименована.")
+	return nil
+}
+
+func actionDeleteCategory(ctx context.Context, d *Deps) error {
+	catID, err := chooseAnyCategory(ctx, d.CatRepo)
+	if err != nil {
+		return err
+	}
+	has, err := d.CatRepo.HasOperations(ctx, catID)
+	if err != nil {
+		return err
+	}
+	if has {
+		fmt.Println("Нельзя удалить: в категории есть операции. Сначала удалите/перенесите операции.")
+		return nil
+	}
+	if !confirm("Точно удалить категорию?") {
+		return nil
+	}
+	if err := d.CatRepo.Delete(ctx, catID); err != nil {
+		return err
+	}
+	fmt.Println("Категория удалена.")
+	return nil
+}
+
+// === Счета ===
 
 func actionListAccounts(ctx context.Context, d *Deps) error {
 	accs, err := d.AccRepo.List(ctx)
@@ -207,7 +269,7 @@ func actionDeleteAccount(ctx context.Context, d *Deps) error {
 	if err != nil {
 		return err
 	}
-	if !confirm("Точно удалить счёт и его операции?") {
+	if !confirm("Удалить счёт и его операции?") {
 		return nil
 	}
 	if err := d.AccRepo.Delete(ctx, id); err != nil {
@@ -229,7 +291,21 @@ func actionDeleteAccount(ctx context.Context, d *Deps) error {
 	return nil
 }
 
-// ===== ЭКСПОРТ/ИМПОРТ =====
+// NEW: переименование активного счёта (нужно для execute.go -> "rename_account")
+func actionRenameAccount(ctx context.Context, d *Deps) error {
+	newName := readLine("Новое имя активного счёта: ")
+	if strings.TrimSpace(newName) == "" {
+		fmt.Println("Имя пустое")
+		return nil
+	}
+	if err := d.Acc.Rename(ctx, d.AccountID, newName); err != nil {
+		return err
+	}
+	fmt.Println("Счёт переименован.")
+	return nil
+}
+
+// === Экспорт/импорт операций ===
 
 func actionExportOpsCSV(ctx context.Context, d *Deps) error {
 	path := readLine("Путь к файлу (напр. ops.csv): ")
@@ -238,6 +314,32 @@ func actionExportOpsCSV(ctx context.Context, d *Deps) error {
 	}
 	from, to := time.Now().AddDate(0, 0, -30), time.Now()
 	if err := files.ExportOperationsCSV(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to, path); err != nil {
+		return err
+	}
+	fmt.Println("Экспортировано в", path)
+	return nil
+}
+
+func actionExportOpsJSON(ctx context.Context, d *Deps) error {
+	path := readLine("Путь к файлу (напр. ops.json): ")
+	if path == "" {
+		path = "ops.json"
+	}
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	if err := files.ExportOperationsJSON(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to, path); err != nil {
+		return err
+	}
+	fmt.Println("Экспортировано в", path)
+	return nil
+}
+
+func actionExportOpsYAML(ctx context.Context, d *Deps) error {
+	path := readLine("Путь к файлу (напр. ops.yaml): ")
+	if path == "" {
+		path = "ops.yaml"
+	}
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	if err := files.ExportOperationsYAML(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to, path); err != nil {
 		return err
 	}
 	fmt.Println("Экспортировано в", path)
@@ -258,148 +360,24 @@ func actionImportOpsCSV(ctx context.Context, d *Deps) error {
 		fmt.Println("Нет записей для импорта")
 		return nil
 	}
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
 	for _, r := range rows {
-		catID, err := ensureCategory(ctx, d.CatRepo, d.Factory, r.Category, domain.CategoryType(r.Type))
-		if err != nil {
-			return err
+		in := facade.AddOpInput{
+			AccountID:    d.AccountID,
+			Amount:       r.Amount,
+			When:         r.Date,
+			CategoryName: r.Category,
+			Description:  r.Description,
 		}
-		if _, err := opSvc.ApplyOperation(ctx, domain.OperationType(r.Type), d.AccountID, r.Amount, r.Date, catID, r.Description); err != nil {
+		if r.Type >= 0 {
+			_, err = d.Op.AddIncome(ctx, in)
+		} else {
+			_, err = d.Op.AddExpense(ctx, in)
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return printSummary(ctx, *d, fmt.Sprintf("Импортировано операций: %d.", len(rows)))
-}
-
-func actionEditOp30d(ctx context.Context, d *Deps) error {
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	// выберем операцию
-	opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-
-	// загрузим текущие поля
-	old, err := d.OpsRepo.Get(ctx, opID)
-	if err != nil {
-		return err
-	}
-
-	// спросим новые значения (пусто = оставить)
-	newType := readTypeOptional(old.Type)
-	newAmt, err := readAmountOptional("Сумма", old.Amount)
-	if err != nil {
-		return err
-	}
-	newDate, err := readDateOptional(old.Date)
-	if err != nil {
-		return err
-	}
-
-	// категория: если тип поменялся — обязателен выбор новой; иначе можно Enter оставить
-	var newCat domain.CategoryID
-	if newType != old.Type {
-		newCat, err = chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
-			domain.CategoryType(newType), old.Category, false)
-		if err != nil {
-			return err
-		}
-	} else {
-		newCat, err = chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
-			domain.CategoryType(newType), old.Category, true)
-		if err != nil {
-			return err
-		}
-	}
-
-	// описание — простое (пусто = оставить)
-	desc := readLine(fmt.Sprintf("Описание (пусто = оставить: %q): ", old.Description))
-	if desc == "" {
-		desc = old.Description
-	}
-
-	// применяем через сервис
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
-	if err := opSvc.UpdateOperation(ctx, opID, newType, newAmt, newDate, newCat, desc); err != nil {
-		return err
-	}
-	return printSummary(ctx, *d, "Операция обновлена.")
-}
-
-func actionDeleteOp30d(ctx context.Context, d *Deps) error {
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-	if !confirm("Удалить выбранную операцию?") {
-		return nil
-	}
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
-	if err := opSvc.RemoveOperation(ctx, opID); err != nil {
-		return err
-	}
-	return printSummary(ctx, *d, "Операция удалена.")
-}
-
-func actionExportOpsJSON(ctx context.Context, d *Deps) error {
-	path := readLine("Путь к файлу (напр. ops.json): ")
-	if path == "" {
-		path = "ops.json"
-	}
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	if err := files.ExportOperationsJSON(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to, path); err != nil {
-		return err
-	}
-	fmt.Println("Экспортировано в", path)
-	return nil
-}
-
-func actionSummaryCat30d(ctx context.Context, d *Deps) error {
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	an := service.NewAnalyticsService(d.OpsRepo)
-	list, err := an.ByCategory(ctx, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-	if len(list) == 0 {
-		fmt.Println("Нет данных за период")
-		return nil
-	}
-	fmt.Println("=== Сводка по категориям (30 дней) ===")
-	for _, cs := range list {
-		tag := "доход"
-		if cs.Type == domain.CatExpense {
-			tag = "расход"
-		}
-		fmt.Printf("%-20s [%s]  Доход: %8s  Расход: %8s  Итого: %8s\n",
-			cs.Name, tag, cs.Income.StringFixed(2), cs.Expense.StringFixed(2), cs.Net.StringFixed(2))
-	}
-	return nil
-}
-
-func actionSummaryCatPeriod(ctx context.Context, d *Deps) error {
-	from, _ := readDate("Дата ОТ")
-	to, _ := readDate("Дата ДО")
-	an := service.NewAnalyticsService(d.OpsRepo)
-	list, err := an.ByCategory(ctx, d.AccountID, from, to)
-	if err != nil {
-		return err
-	}
-	if len(list) == 0 {
-		fmt.Println("Нет данных за период")
-		return nil
-	}
-	fmt.Println("=== Сводка по категориям ===")
-	for _, cs := range list {
-		tag := "доход"
-		if cs.Type == domain.CatExpense {
-			tag = "расход"
-		}
-		fmt.Printf("%-20s [%s]  Доход: %8s  Расход: %8s  Итого: %8s\n",
-			cs.Name, tag, cs.Income.StringFixed(2), cs.Expense.StringFixed(2), cs.Net.StringFixed(2))
-	}
-	return nil
 }
 
 func actionImportOpsJSON(ctx context.Context, d *Deps) error {
@@ -416,83 +394,24 @@ func actionImportOpsJSON(ctx context.Context, d *Deps) error {
 		fmt.Println("Нет записей для импорта")
 		return nil
 	}
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
 	for _, r := range rows {
-		catID, err := ensureCategory(ctx, d.CatRepo, d.Factory, r.Category, domain.CategoryType(r.Type))
-		if err != nil {
-			return err
+		in := facade.AddOpInput{
+			AccountID:    d.AccountID,
+			Amount:       r.Amount,
+			When:         r.Date,
+			CategoryName: r.Category,
+			Description:  r.Description,
 		}
-		if _, err := opSvc.ApplyOperation(ctx, domain.OperationType(r.Type), d.AccountID, r.Amount, r.Date, catID, r.Description); err != nil {
+		if r.Type >= 0 {
+			_, err = d.Op.AddIncome(ctx, in)
+		} else {
+			_, err = d.Op.AddExpense(ctx, in)
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return printSummary(ctx, *d, fmt.Sprintf("Импортировано операций: %d.", len(rows)))
-}
-
-func actionRenameAccount(ctx context.Context, d *Deps) error {
-	newName := readLine("Новое имя активного счёта: ")
-	if strings.TrimSpace(newName) == "" {
-		fmt.Println("Имя пустое")
-		return nil
-	}
-	if err := d.AccRepo.UpdateName(ctx, d.AccountID, newName); err != nil {
-		return err
-	}
-	fmt.Println("Счёт переименован.")
-	return nil
-}
-
-func actionRenameCategory(ctx context.Context, d *Deps) error {
-	catID, err := chooseAnyCategory(ctx, d.CatRepo)
-	if err != nil {
-		return err
-	}
-	newName := readLine("Новое имя категории: ")
-	if strings.TrimSpace(newName) == "" {
-		fmt.Println("Имя пустое")
-		return nil
-	}
-	if err := d.CatRepo.UpdateName(ctx, catID, newName); err != nil {
-		return err
-	}
-	fmt.Println("Категория переименована.")
-	return nil
-}
-
-func actionDeleteCategory(ctx context.Context, d *Deps) error {
-	catID, err := chooseAnyCategory(ctx, d.CatRepo)
-	if err != nil {
-		return err
-	}
-	has, err := d.CatRepo.HasOperations(ctx, catID)
-	if err != nil {
-		return err
-	}
-	if has {
-		fmt.Println("Нельзя удалить: в категории есть операции. Сначала удалите/перенесите операции.")
-		return nil
-	}
-	if !confirm("Точно удалить категорию?") {
-		return nil
-	}
-	if err := d.CatRepo.Delete(ctx, catID); err != nil {
-		return err
-	}
-	fmt.Println("Категория удалена.")
-	return nil
-}
-
-func actionExportOpsYAML(ctx context.Context, d *Deps) error {
-	path := readLine("Путь к файлу (напр. ops.yaml): ")
-	if path == "" {
-		path = "ops.yaml"
-	}
-	from, to := time.Now().AddDate(0, 0, -30), time.Now()
-	if err := files.ExportOperationsYAML(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to, path); err != nil {
-		return err
-	}
-	fmt.Println("Экспортировано в", path)
-	return nil
 }
 
 func actionImportOpsYAML(ctx context.Context, d *Deps) error {
@@ -509,20 +428,203 @@ func actionImportOpsYAML(ctx context.Context, d *Deps) error {
 		fmt.Println("Нет записей для импорта")
 		return nil
 	}
-	opSvc := service.NewOperationService(d.Pool, d.Factory)
 	for _, r := range rows {
-		catID, err := ensureCategory(ctx, d.CatRepo, d.Factory, r.Category, domain.CategoryType(r.Type))
-		if err != nil {
-			return err
+		in := facade.AddOpInput{
+			AccountID:    d.AccountID,
+			Amount:       r.Amount,
+			When:         r.Date,
+			CategoryName: r.Category,
+			Description:  r.Description,
 		}
-		if _, err := opSvc.ApplyOperation(ctx, domain.OperationType(r.Type), d.AccountID, r.Amount, r.Date, catID, r.Description); err != nil {
+		if r.Type >= 0 {
+			_, err = d.Op.AddIncome(ctx, in)
+		} else {
+			_, err = d.Op.AddExpense(ctx, in)
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return printSummary(ctx, *d, fmt.Sprintf("Импортировано операций: %d.", len(rows)))
 }
 
-func actionExit(ctx context.Context, d *Deps) error {
-	// соответствует case "exit" / "" → просто выйти
+// === Редактирование / удаление операций — через фасад ===
+
+func actionEditOp30d(ctx context.Context, d *Deps) error {
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
+	if err != nil {
+		return err
+	}
+
+	old, err := d.OpsRepo.Get(ctx, opID)
+	if err != nil {
+		return err
+	}
+
+	newType := readTypeOptional(old.Type) // возвращает domain.OperationType
+	newAmt, err := readAmountOptional("Сумма", old.Amount)
+	if err != nil {
+		return err
+	}
+	newDate, err := readDateOptional(old.Date)
+	if err != nil {
+		return err
+	}
+
+	// указатели только если значение поменялось
+	var newAmtPtr *decimal.Decimal
+	if !newAmt.Equal(old.Amount) {
+		v := newAmt
+		newAmtPtr = &v
+	}
+	var newDatePtr *time.Time
+	if !newDate.Equal(old.Date) {
+		v := newDate
+		newDatePtr = &v
+	}
+
+	// категория по имени (фасаду нужен name)
+	var newCatNamePtr *string
+	if newType != old.Type {
+		newCatID, err := chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
+			domain.CategoryType(newType), old.Category, false)
+		if err != nil {
+			return err
+		}
+		c, err := d.CatRepo.Get(ctx, newCatID)
+		if err != nil {
+			return err
+		}
+		n := c.Name
+		newCatNamePtr = &n
+	} else {
+		newCatID, err := chooseCategoryOptional(ctx, d.CatRepo, d.Factory,
+			domain.CategoryType(newType), old.Category, true)
+		if err != nil {
+			return err
+		}
+		c, err := d.CatRepo.Get(ctx, newCatID)
+		if err != nil {
+			return err
+		}
+		n := c.Name
+		newCatNamePtr = &n
+	}
+
+	// ForcedType — только если тип поменялся
+	var forced *domain.CategoryType
+	if newType != old.Type {
+		switch newType {
+		case domain.OpIncome:
+			t := domain.CatIncome
+			forced = &t
+		case domain.OpExpense:
+			t := domain.CatExpense
+			forced = &t
+		}
+	}
+
+	op, err := d.Op.Edit(ctx, facade.EditOpInput{
+		OperationID: old.ID,
+		NewAmount:   newAmtPtr,
+		NewWhen:     newDatePtr,
+		NewCategory: newCatNamePtr,
+		NewDesc:     strPtrOrNil(readLine(fmt.Sprintf("Описание (пусто = оставить: %q): ", old.Description))),
+		ForcedType:  forced,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Операция обновлена: %s  %s  %s  %s\n",
+		op.ID, op.Date.Format("2006-01-02"), op.Amount.StringFixed(2), op.Description)
+	return printSummary(ctx, *d, "")
+}
+
+func actionDeleteOp30d(ctx context.Context, d *Deps) error {
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	opID, err := chooseOperation(ctx, d.OpsRepo, d.CatRepo, d.AccountID, from, to)
+	if err != nil {
+		return err
+	}
+	if !confirm("Удалить выбранную операцию?") {
+		return nil
+	}
+	if err := d.Op.Delete(ctx, opID); err != nil {
+		return err
+	}
+	return printSummary(ctx, *d, "Операция удалена.")
+}
+
+// === helpers ===
+
+func printSummary(ctx context.Context, d Deps, notice string) error {
+	if notice != "" {
+		fmt.Println(notice)
+	}
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	sum, err := d.Ana.Summary(ctx, d.AccountID, from, to)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Сводка (30 дней) — Доход: %s | Расход: %s | Итого: %s\n",
+		sum.Income.StringFixed(2), sum.Expense.StringFixed(2), sum.Net.StringFixed(2))
 	return nil
+}
+
+func actionSummaryCat30d(ctx context.Context, d *Deps) error {
+	from, to := time.Now().AddDate(0, 0, -30), time.Now()
+	return printCategoryBreakdownCombined(ctx, d, from, to, "30 дней")
+}
+
+func actionSummaryCatPeriod(ctx context.Context, d *Deps) error {
+	from, _ := readDate("Дата ОТ")
+	to, _ := readDate("Дата ДО")
+	return printCategoryBreakdownCombined(ctx, d, from, to, "период")
+}
+
+func printCategoryBreakdownCombined(ctx context.Context, d *Deps, from, to time.Time, title string) error {
+	bb, err := d.Ana.BreakdownByCategory(ctx, d.AccountID, from, to)
+	if err != nil {
+		return err
+	}
+	type agg struct {
+		Inc decimal.Decimal
+		Exp decimal.Decimal
+	}
+	m := map[string]agg{}
+	for _, x := range bb.Incomes {
+		a := m[x.Category]
+		a.Inc = a.Inc.Add(x.Amount)
+		m[x.Category] = a
+	}
+	for _, x := range bb.Expenses {
+		a := m[x.Category]
+		a.Exp = a.Exp.Add(x.Amount)
+		m[x.Category] = a
+	}
+	if len(m) == 0 {
+		fmt.Println("Нет данных за период")
+		return nil
+	}
+	fmt.Printf("=== Сводка по категориям (%s) ===\n", title)
+	for name, a := range m {
+		tag := "оба"
+		if a.Exp.IsZero() {
+			tag = "доход"
+		} else if a.Inc.IsZero() {
+			tag = "расход"
+		}
+		net := a.Inc.Sub(a.Exp)
+		fmt.Printf("%-20s [%s]  Доход: %8s  Расход: %8s  Итого: %8s\n",
+			name, tag, a.Inc.StringFixed(2), a.Exp.StringFixed(2), net.StringFixed(2))
+	}
+	return nil
+}
+
+func strPtrOrNil(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return &s
 }

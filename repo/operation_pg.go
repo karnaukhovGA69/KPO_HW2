@@ -14,7 +14,6 @@ type PgOperationRepo struct{ db *pgxpool.Pool }
 
 func NewPgOperationRepo(db *pgxpool.Pool) *PgOperationRepo { return &PgOperationRepo{db: db} }
 
-// Create — вставка операции. FK требуют, чтобы account_id и category_id существовали.
 func (r *PgOperationRepo) Create(ctx context.Context, o domain.Operation) error {
 	_, err := r.db.Exec(ctx,
 		`INSERT INTO operations(id,type,bank_account_id,amount,"date",description,category_id)
@@ -23,12 +22,10 @@ func (r *PgOperationRepo) Create(ctx context.Context, o domain.Operation) error 
 	)
 	return err
 }
-
-// ListByAccount — список операций по счёту и периоду (включительно).
 func (r *PgOperationRepo) ListByAccount(ctx context.Context, accID domain.AccountID, from, to time.Time) ([]domain.Operation, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT id,type,bank_account_id,amount,"date",description,category_id
-		   FROM operations
+		  FROM operations
 		  WHERE bank_account_id=$1 AND "date" BETWEEN $2 AND $3
 		  ORDER BY "date", id`,
 		accID, from, to,
@@ -59,7 +56,7 @@ func (r *PgOperationRepo) Get(ctx context.Context, id domain.OperationID) (domai
 	var amt string
 	err := r.db.QueryRow(ctx,
 		`SELECT id,type,bank_account_id,amount,"date",description,category_id
-		   FROM operations WHERE id=$1`, id).
+		FROM operations WHERE id=$1`, id).
 		Scan(&o.ID, &o.Type, &o.BankAccount, &amt, &o.Date, &o.Description, &o.Category)
 	if err != nil {
 		return domain.Operation{}, err

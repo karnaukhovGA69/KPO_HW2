@@ -1,24 +1,29 @@
 [
-	{ "key": "add_income", "field": "Добавить доход" },
-	{ "key": "add_expense", "field": "Добавить расход" },
-	{ "key": "summary_30d", "field": "Сводка за 30 дней" },
-	{ "key": "list_ops_30d", "field": "Список операций за 30 дней" },
-	{ "key": "list_accounts", "field": "Список счетов" },
-	{ "key": "delete_op_30d", "field": "Удалить операцию (за 30 дней)" },
-	{ "key": "summary_cat_30d", "field": "Сводка по категориям (30 дней)" },
-	{ "key": "summary_cat_period", "field": "Сводка по категориям (период)" },
-	{ "key": "export_ops_csv", "field": "Экспорт операций (CSV)" },
-	{ "key": "import_ops_csv", "field": "Импорт операций (CSV)" },
-	{ "key": "export_ops_json", "field": "Экспорт операций (JSON)" },
-	{ "key": "import_ops_json", "field": "Импорт операций (JSON)" },
-	{ "key": "export_ops_yaml", "field": "Экспорт операций (YAML)" },
-	{ "key": "import_ops_yaml", "field": "Импорт операций (YAML)" },
-	{ "key": "rename_account", "field": "Переименовать активный счёт" },
-	{ "key": "create_account", "field": "Создать новый счёт" },
-	{ "key": "rename_category", "field": "Переименовать категорию" },
-	{ "key": "delete_category", "field": "Удалить категорию" },
-	{ "key": "add_category", "field": "Создать категорию" },
-	{ "key": "list_categories", "field": "Список категорий" },
-	{ "key": "edit_op_30d", "field": "Редактировать операцию (30 дней)" },
-	{ "key": "exit", "field": "Выход" }
+	{ "field": "Добавить доход", "key": "add_income" },
+	{ "field": "Добавить расход", "key": "add_expense" },
+	{ "field": "Редактировать операцию (30 дней)", "key": "edit_op_30d" },
+	{ "field": "Удалить операцию (за 30 дней)", "key": "delete_op_30d" },
+	{ "field": "Список операций за 30 дней", "key": "list_ops_30d" },
+
+	{ "field": "Сводка за 30 дней", "key": "summary_30d" },
+	{ "field": "Сводка по категориям (30 дней)", "key": "summary_cat_30d" },
+	{ "field": "Сводка по категориям (период)", "key": "summary_cat_period" },
+
+	{ "field": "Экспорт операций (CSV)", "key": "export_ops_csv" },
+	{ "field": "Импорт операций (CSV)", "key": "import_ops_csv" },
+	{ "field": "Экспорт операций (JSON)", "key": "export_ops_json" },
+	{ "field": "Импорт операций (JSON)", "key": "import_ops_json" },
+	{ "field": "Экспорт операций (YAML)", "key": "export_ops_yaml" },
+	{ "field": "Импорт операций (YAML)", "key": "import_ops_yaml" },
+
+	{ "field": "Создать категорию", "key": "add_category" },
+	{ "field": "Список категорий", "key": "list_categories" },
+	{ "field": "Переименовать категорию", "key": "rename_category" },
+	{ "field": "Удалить категорию", "key": "delete_category" },
+
+	{ "field": "Список счетов", "key": "list_accounts" },
+	{ "field": "Переименовать активный счёт", "key": "rename_account" },
+	{ "field": "Создать новый счёт", "key": "create_account" },
+
+	{ "field": "Выход", "key": "exit" }
 ]

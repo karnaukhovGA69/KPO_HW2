@@ -13,7 +13,7 @@ var (
 
 type Category struct {
 	ID   CategoryID   `json:"id"   yaml:"id"`
-	Type CategoryType `json:"type" yaml:"type"` // 1=income, -1=expense
+	Type CategoryType `json:"type" yaml:"type"` // 1=income(доход), -1=expense(траты)
 	Name string       `json:"name" yaml:"name"`
 }
 
